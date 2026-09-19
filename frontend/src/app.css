@@ -1,0 +1,100 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where([data-theme-mode="dark"], [data-theme-mode="dark"] *));
+
+:root {
+  color-scheme: dark;
+  font-size: 16px;
+
+  --bg-base: #0b0b10;
+  --bg-surface: #0f0f14;
+  --bg-elevated: #16161e;
+  --bg-overlay: #1a1a24;
+  --bg-inset: #0a0a0e;
+
+  --text-primary: #e0e0e8;
+  --text-secondary: #a0a0b0;
+  --text-muted: #6a6a7a;
+
+  --border-default: #2a2a3a;
+  --border-subtle: #1e1e2a;
+
+  --accent: #a855f7;
+  --accent-hover: #9333ea;
+  --accent-text: #ffffff;
+  --accent-muted: rgba(168, 85, 247, 0.15);
+
+  --scrollbar-track: #1a1a24;
+  --scrollbar-thumb: #3a3a4a;
+  --scrollbar-thumb-hover: #4a4a5a;
+
+  --backdrop-tint: rgba(0, 0, 0, 0.6);
+  --input-bg: #16161e;
+  --input-border: #2a2a3a;
+  --hover-bg: rgba(255, 255, 255, 0.05);
+  --active-bg: rgba(255, 255, 255, 0.08);
+  --danger: #ef4444;
+  --success: #22c55e;
+  --warning: #eab308;
+
+  --module-accent: #a855f7;
+  --module-accent-muted: #a855f726;
+  --module-accent-hover: #a855f718;
+}
+
+html[data-interface-scale='comfortable'] {
+  font-size: 17px;
+}
+
+html[data-motion='reduced'] *,
+html[data-motion='reduced'] *::before,
+html[data-motion='reduced'] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+  transition-duration: 0.01ms !important;
+}
+
+/* Settings keeps the blurred app visible, but a continuously moving layer
+   would force Chromium to recompute that full-screen blur every frame. */
+html[data-settings-open='true'] #app *:not(.settings-layer):not(.settings-layer *),
+html[data-settings-open='true'] #app *:not(.settings-layer):not(.settings-layer *)::before,
+html[data-settings-open='true'] #app *:not(.settings-layer):not(.settings-layer *)::after {
+  animation-play-state: paused !important;
+}
+
+html[data-settings-open='true'] .settings-layer {
+  transform: translateZ(0);
+  will-change: backdrop-filter;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  overflow: hidden;
+  height: 100dvh;
+}
+
+#app {
+  height: 100dvh;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
