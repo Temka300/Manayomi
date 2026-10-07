@@ -368,7 +368,7 @@
       <MangaDownloads {blur} {coverSize} on:open={(event) => openLocal(event.detail.mangaId)} />
     {:else}
       <div class="h-full overflow-y-auto">
-        <MangaSettingsPanel on:settingsChanged={onSettingsChanged} />
+        <MangaSettingsPanel on:settingsChanged={onSettingsChanged} on:downloadedIdsChanged={() => (browseKey += 1)} />
       </div>
     {/if}
   </div>

@@ -24,6 +24,7 @@
     num_pages: number;
     num_favorites: number;
     downloaded: boolean;
+    downloaded_elsewhere: boolean;
     known_tags: { name: string; category: string }[];
     ignored_matches: string[];
   }
@@ -68,7 +69,7 @@
     + (language !== 'all' ? 1 : 0);
   $: hasActiveFilters = filterCount > 0;
   $: visibleItems = items.filter(
-    (item) => (!hideDownloaded || !item.downloaded) && (showIgnored || !isIgnored(item))
+    (item) => (!hideDownloaded || (!item.downloaded && !item.downloaded_elsewhere)) && (showIgnored || !isIgnored(item))
   );
 
   function browseLanguageBadges(item: BrowseItem): string[] {

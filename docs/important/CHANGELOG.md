@@ -2,6 +2,8 @@
 
 ## Current experimental update
 
+- Export local nHentai manga IDs as a six-digit text list, import named lists in Manayomi Settings, and include those lists in Browse's Hide downloaded filter with individual removal controls.
+
 - Manayomi is a first-class optional surface in the current Keivotos descriptor registry; it keeps the established `modules/manga` storage and `/api/manga` routes.
 - Manga roots can be relocated only after a read-only preview proves every indexed CBZ exists under the new root. Applying the relocation atomically rebases the index and root record; it never moves or deletes media.
 - The Library toolbar keeps the sidebar, Filter, search, sort, and language controls together above the grid. Local and Browse covers show normalized JP, EN, and CN badges at lower right.

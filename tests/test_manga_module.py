@@ -593,6 +593,175 @@ print("SCAN_TEST_OK")
 """
 
 
+DOWNLOADED_IDS_SCRIPT = r"""
+import json
+import socket
+import sys
+import threading
+import time
+from pathlib import Path
+from types import SimpleNamespace
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
+from unittest.mock import patch
+sys.path.insert(0, sys.argv[1])
+
+import uvicorn
+from manga import database, queries
+from manga.database import index_session, user_session
+from routers import manga as router
+from server import app
+
+app.dependency_overrides[router._require_enabled] = lambda: None
+# Exercise actual loopback HTTP without requiring optional TestClient dependencies.
+sock = socket.socket()
+sock.bind(('127.0.0.1', 0))
+port = sock.getsockname()[1]
+server = uvicorn.Server(uvicorn.Config(app, lifespan='off', loop='asyncio', http='h11', ws='none', log_level='warning'))
+thread = threading.Thread(target=lambda: server.run(sockets=[sock]), daemon=True)
+thread.start()
+deadline = time.monotonic() + 10
+while not server.started:
+    assert thread.is_alive() and time.monotonic() < deadline, 'Test server did not start'
+    time.sleep(0.01)
+
+class Client:
+    def request(self, method, path, body=None):
+        request = Request('http://127.0.0.1:' + str(port) + path, method=method,
+                          data=json.dumps(body).encode() if body is not None else None,
+                          headers={'Content-Type': 'application/json'})
+        try:
+            response = urlopen(request, timeout=10)
+        except HTTPError as error:
+            response = error
+        with response:
+            text = response.read().decode('utf-8')
+            return SimpleNamespace(status_code=response.status, text=text, headers=response.headers,
+                                   json=lambda: json.loads(text))
+
+    def get(self, path):
+        return self.request('GET', path)
+
+    def post(self, path, json):
+        return self.request('POST', path, json)
+
+    def delete(self, path):
+        return self.request('DELETE', path)
+
+client = Client()
+base = '/api/manga/downloaded-ids'
+assert 'text/plain' in app.openapi()['paths'][base + '/export']['get']['responses']['200']['content']
+assert client.get(base).json() == {'lists': []}
+assert client.get(base + '/export').text == ''
+
+media = Path(sys.argv[2]) / 'media.cbz'
+media.write_bytes(b'preserved local archive')
+with index_session() as index:
+    for source, gallery_id in [('nhentai', 123456), ('nhentai', 42), ('mangadex', -1)]:
+        index.execute(
+            'INSERT INTO manga (source, gallery_id, file_path, title, created_at) VALUES (?, ?, ?, ?, ?)',
+            (source, gallery_id, str(media) + str(gallery_id), 'Local manga', 1),
+        )
+with user_session() as user:
+    user.execute("INSERT INTO favorites (source, gallery_id, created_at) VALUES ('nhentai', 123456, 1)")
+    user.execute("INSERT INTO settings (key, value) VALUES ('blur_covers', '0')")
+
+exported = client.get(base + '/export')
+assert exported.status_code == 200
+assert exported.text == '000042\n123456\n'
+assert 'manayomi-downloaded-ids.txt' in exported.headers['content-disposition']
+assert exported.headers['content-type'].startswith('text/plain')
+
+first = client.post(base, json={'filename': 'PC library.txt', 'content': '\ufeff654321\r\n123456\r\n654321\r\n\n000042\n'})
+assert first.status_code == 200, first.text
+first_list = first.json()['lists'][0]
+assert first_list['filename'] == 'PC library.txt' and first_list['count'] == 3
+second = client.post(base, json={'filename': 'overlap.txt', 'content': '654321\n222222\n'})
+assert second.status_code == 200
+second_id = second.json()['lists'][1]['id']
+assert queries.imported_downloaded_gallery_ids([42, 123456, 654321, 222222, 333333]) == {42, 123456, 654321, 222222}
+assert queries.imported_downloaded_gallery_ids([]) == set()
+assert queries.downloaded_gallery_ids([123456, 654321, 222222]) == {123456}
+assert client.get(base + '/export').text == exported.text
+assert client.get('/api/manga/settings').json()['blur_covers'] is False
+
+for content in ('', ' \n', '654321\n12345\n', '1234567', '000000', '１２３４５６', '654321,222222', 'https://nhentai.net/g/654321/'):
+    invalid = client.post(base, json={'filename': 'invalid.txt', 'content': content})
+    assert invalid.status_code == 400, (content, invalid.text)
+    assert client.get(base).json() == second.json()
+assert client.post(base, json={'filename': 'bad\nname.txt', 'content': '654321'}).status_code == 400
+assert client.post(base, json={'filename': 'x' * 256, 'content': '654321'}).status_code == 422
+assert client.post(base, json={'filename': 'large.txt', 'content': ' ' * 8_000_001}).status_code == 422
+
+# Browse caching retains provider data, but downloaded markers are reconciled on every request.
+remote_items = [{'id': gid, 'tag_ids': []} for gid in [123456, 654321, 222222, 333333, 42]]
+router._browse_cache.clear()
+with (
+    patch.object(router, '_nh_guard'),
+    patch.object(router.nhentai, 'browse_galleries', return_value={'items': remote_items, 'num_pages': 1}) as remote,
+):
+    result = client.get('/api/manga/browse?per_page=20')
+    assert result.status_code == 200, result.text
+    items = result.json()['items']
+    assert [item['id'] for item in items if item['downloaded']] == [123456, 42]
+    assert [item['id'] for item in items if item['downloaded_elsewhere']] == [123456, 654321, 222222, 42]
+    visible = [item['id'] for item in items if not item['downloaded'] and not item['downloaded_elsewhere']]
+    assert visible == [333333]
+
+    removed = client.delete(base + '/' + str(first_list['id']))
+    assert removed.status_code == 200 and removed.json()['lists'] == [second.json()['lists'][1]]
+    assert queries.imported_downloaded_gallery_ids([42, 123456, 654321, 222222]) == {654321, 222222}
+    assert client.get(base + '/export').text == exported.text
+    client.delete(base + '/' + str(second_id))
+    items = client.get('/api/manga/browse?per_page=20').json()['items']
+    assert not any(item['downloaded_elsewhere'] for item in items)
+    assert [item['id'] for item in items if item['downloaded']] == [123456, 42]
+    assert remote.call_count == 1
+assert client.delete(base + '/' + str(second_id)).status_code == 404
+
+roundtrip = client.post(base, json={'filename': 'export.txt', 'content': exported.text})
+assert roundtrip.status_code == 200 and roundtrip.json()['lists'][0]['count'] == 2
+# Reinitialization and index rebuild preserve the user-state list and organization.
+database._initialized = False
+assert client.get(base).json() == roundtrip.json()
+with index_session() as index:
+    index.execute('DELETE FROM manga')
+assert client.get(base + '/export').text == ''
+assert queries.imported_downloaded_gallery_ids([42, 123456]) == {42, 123456}
+with user_session() as user:
+    assert user.execute('SELECT COUNT(*) FROM favorites').fetchone()[0] == 1
+assert media.read_bytes() == b'preserved local archive'
+with patch.object(router, '_nh_guard'), patch.object(router.nhentai, 'get_gallery', return_value={'id': 123456, 'pages': []}):
+    gallery = client.get('/api/manga/gallery/123456').json()
+    assert gallery['downloaded'] is False and 'local_manga_id' not in gallery
+
+app.dependency_overrides.clear()
+with patch.object(router.suite_modules, 'enabled_ids', return_value={'files'}):
+    assert client.get(base).status_code == 409
+    assert client.get(base + '/export').status_code == 409
+    assert client.post(base, json={'filename': 'x.txt', 'content': '123456'}).status_code == 409
+    assert client.delete(base + '/1').status_code == 409
+server.should_exit = True
+thread.join(5)
+assert not thread.is_alive()
+print('DOWNLOADED_IDS_TEST_OK')
+"""
+
+
+class MangaDownloadedIdsIntegrationTests(unittest.TestCase):
+    def test_import_export_overlap_removal_persistence_and_browse(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            completed = subprocess.run(
+                [sys.executable, "-c", DOWNLOADED_IDS_SCRIPT, str(BACKEND), temporary],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                env={**os.environ, "KEIVOTOS_HOME": str(Path(temporary) / "home")},
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            self.assertIn("DOWNLOADED_IDS_TEST_OK", completed.stdout)
+
+
 class MangaScanIntegrationTests(unittest.TestCase):
     def test_isolated_scan_index_search_and_favorite(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

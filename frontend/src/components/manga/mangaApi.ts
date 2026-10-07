@@ -163,6 +163,13 @@ export interface MangaSettings {
   ignored_tags: string[];
 }
 
+export interface DownloadedIdList {
+  id: number;
+  filename: string;
+  created_at: number;
+  count: number;
+}
+
 export interface ScanProgress {
   running: boolean;
   root_id: number | null;
@@ -276,7 +283,7 @@ export interface MangaDexChaptersResult {
   offset: number;
 }
 
-async function json<T>(url: string, init?: RequestInit): Promise<T> {
+async function checkedResponse(url: string, init?: RequestInit): Promise<Response> {
   const response = await fetch(url, init);
   if (!response.ok) {
     let detail = `${response.status}`;
@@ -287,7 +294,11 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
     }
     throw new Error(detail);
   }
-  return response.json() as Promise<T>;
+  return response;
+}
+
+async function json<T>(url: string, init?: RequestInit): Promise<T> {
+  return (await checkedResponse(url, init)).json() as Promise<T>;
 }
 
 const post = (url: string, body?: unknown): RequestInit => ({
@@ -335,6 +346,12 @@ export const mangaApi = {
   relocateRoot: (id: number, path: string) =>
     json<RootRelocation>(`/api/manga/roots/${id}/relocate`, post('', { path, confirm: true })),
   settings: () => json<MangaSettings>('/api/manga/settings'),
+  downloadedIdLists: () => json<{ lists: DownloadedIdList[] }>('/api/manga/downloaded-ids'),
+  exportDownloadedIds: async () => (await checkedResponse('/api/manga/downloaded-ids/export')).blob(),
+  importDownloadedIds: (filename: string, content: string) =>
+    json<{ lists: DownloadedIdList[] }>('/api/manga/downloaded-ids', post('', { filename, content })),
+  removeDownloadedIdList: (id: number) =>
+    json<{ lists: DownloadedIdList[] }>(`/api/manga/downloaded-ids/${id}`, { method: 'DELETE' }),
   updateSettings: (changes: Partial<MangaSettings>) =>
     json<MangaSettings>('/api/manga/settings', {
       method: 'PUT',

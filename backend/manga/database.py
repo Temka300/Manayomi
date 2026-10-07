@@ -143,6 +143,18 @@ CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS downloaded_id_lists (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    filename TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS downloaded_id_list_items (
+    list_id INTEGER NOT NULL REFERENCES downloaded_id_lists(id) ON DELETE CASCADE,
+    gallery_id INTEGER NOT NULL,
+    PRIMARY KEY (list_id, gallery_id)
+);
+CREATE INDEX IF NOT EXISTS downloaded_id_list_gallery_idx
+    ON downloaded_id_list_items (gallery_id);
 """
 
 

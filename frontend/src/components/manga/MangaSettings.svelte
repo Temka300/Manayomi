@@ -3,13 +3,14 @@
   import {
     mangaApi,
     type CoverProgressMode,
+    type DownloadedIdList,
     type MangaCategory,
     type MangaRoot,
     type MangaSettings,
     type ScanProgress
   } from './mangaApi';
 
-  const dispatch = createEventDispatcher<{ settingsChanged: MangaSettings }>();
+  const dispatch = createEventDispatcher<{ settingsChanged: MangaSettings; downloadedIdsChanged: void }>();
 
   const COVER_PROGRESS_OPTIONS: { value: CoverProgressMode; label: string }[] = [
     { value: 'off', label: 'Off' },
@@ -28,6 +29,10 @@
   let newCategoryName = '';
   let newIgnoredTag = '';
   let message = '';
+  let downloadedIdLists: DownloadedIdList[] = [];
+  let idsBusy = false;
+  let idsMessage = '';
+  let idsFileInput: HTMLInputElement;
   let scanTimer: ReturnType<typeof setInterval> | null = null;
 
   async function refresh() {
@@ -37,6 +42,11 @@
       (await mangaApi.categories()).categories,
       await mangaApi.scanProgress()
     ];
+    try {
+      downloadedIdLists = (await mangaApi.downloadedIdLists()).lists;
+    } catch (e) {
+      idsMessage = e instanceof Error ? e.message : String(e);
+    }
     try {
       enrich = await (await fetch('/api/manga/enrich')).json();
       migrate = await (await fetch('/api/manga/migrate')).json();
@@ -86,6 +96,57 @@
   async function save(changes: Partial<MangaSettings>) {
     settings = await mangaApi.updateSettings(changes);
     dispatch('settingsChanged', settings);
+  }
+
+  async function exportDownloadedIds() {
+    idsBusy = true;
+    idsMessage = '';
+    try {
+      const blob = await mangaApi.exportDownloadedIds();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'manayomi-downloaded-ids.txt';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      idsMessage = e instanceof Error ? e.message : String(e);
+    } finally {
+      idsBusy = false;
+    }
+  }
+
+  async function importDownloadedIds(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    idsBusy = true;
+    idsMessage = '';
+    try {
+      if (file.size > 8_000_000) throw new Error('The downloaded-ID file must be at most 8 MB.');
+      downloadedIdLists = (await mangaApi.importDownloadedIds(file.name, await file.text())).lists;
+      dispatch('downloadedIdsChanged');
+    } catch (e) {
+      idsMessage = e instanceof Error ? e.message : String(e);
+    } finally {
+      input.value = '';
+      idsBusy = false;
+    }
+  }
+
+  async function removeDownloadedIdList(list: DownloadedIdList) {
+    idsBusy = true;
+    idsMessage = '';
+    try {
+      downloadedIdLists = (await mangaApi.removeDownloadedIdList(list.id)).lists;
+      dispatch('downloadedIdsChanged');
+    } catch (e) {
+      idsMessage = e instanceof Error ? e.message : String(e);
+    } finally {
+      idsBusy = false;
+    }
   }
 
   async function addRoot() {
@@ -221,6 +282,28 @@
         {#if migrate.running}Converting… {migrate.processed}/{migrate.total}{:else}{migrate.message}{/if}
       </div>
     {/if}
+  </section>
+
+  <section class="rounded-xl border border-[#26263a] bg-[#14141c] p-3 sm:p-4">
+    <h2 class="mb-1 text-sm font-semibold text-gray-200">Downloaded manga IDs</h2>
+    <p class="mb-3 text-xs text-gray-500">
+      Export your local nHentai manga as six-digit IDs, one per line. Import the file in
+      Colab or another Manayomi library, then use Hide downloaded in Browse.
+    </p>
+    <div class="flex flex-wrap gap-2">
+      <button type="button" class="rounded-lg border border-purple-500/40 bg-purple-500/10 px-3 py-1.5 text-sm text-purple-200 hover:bg-purple-500/20 disabled:opacity-50" disabled={idsBusy} on:click={exportDownloadedIds}>Export downloaded IDs</button>
+      <button type="button" class="rounded-lg border border-[#2c2c40] px-3 py-1.5 text-sm text-gray-300 hover:border-purple-400/60 disabled:opacity-50" disabled={idsBusy} on:click={() => idsFileInput.click()}>Import downloaded IDs</button>
+      <input bind:this={idsFileInput} type="file" accept=".txt,text/plain" class="hidden" aria-label="Downloaded manga ID file" disabled={idsBusy} on:change={importDownloadedIds} />
+    </div>
+    <p class="mt-2 text-xs text-gray-500">Imported lists are saved here. Removing a list only removes its downloaded markers.</p>
+    {#if idsMessage}<p class="mt-2 break-words text-xs text-amber-200" role="status">{idsMessage}</p>{/if}
+    {#each downloadedIdLists as list (list.id)}
+      <div class="mt-2 flex min-w-0 items-center gap-2 rounded-lg bg-[#191922] px-3 py-2 text-sm">
+        <span class="min-w-0 flex-1 break-all text-gray-300">{list.filename}</span>
+        <span class="shrink-0 text-xs text-gray-500">{list.count} IDs</span>
+        <button type="button" class="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-lg text-gray-400 hover:bg-red-500/10 hover:text-red-300 disabled:opacity-50" aria-label={`Remove downloaded ID list ${list.filename}`} title="Remove imported list" disabled={idsBusy} on:click={() => removeDownloadedIdList(list)}>×</button>
+      </div>
+    {/each}
   </section>
 
   <section class="rounded-xl border border-[#26263a] bg-[#14141c] p-3 sm:p-4">

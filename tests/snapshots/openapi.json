@@ -1372,6 +1372,27 @@
         "title": "DictionaryPayload",
         "type": "object"
       },
+      "DownloadedIdsImport": {
+        "properties": {
+          "content": {
+            "maxLength": 8000000,
+            "title": "Content",
+            "type": "string"
+          },
+          "filename": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Filename",
+            "type": "string"
+          }
+        },
+        "required": [
+          "filename",
+          "content"
+        ],
+        "title": "DownloadedIdsImport",
+        "type": "object"
+      },
       "DuplicateGroup": {
         "properties": {
           "content_hash": {
@@ -13474,6 +13495,123 @@
           }
         },
         "summary": "Queue Download"
+      }
+    },
+    "/api/manga/downloaded-ids": {
+      "get": {
+        "operationId": "read_manga_downloaded_id_lists_api_manga_downloaded_ids_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Read Manga Downloaded Id Lists Api Manga Downloaded Ids Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Read Manga Downloaded Id Lists"
+      },
+      "post": {
+        "operationId": "import_manga_downloaded_ids_api_manga_downloaded_ids_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DownloadedIdsImport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Import Manga Downloaded Ids Api Manga Downloaded Ids Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import Manga Downloaded Ids"
+      }
+    },
+    "/api/manga/downloaded-ids/export": {
+      "get": {
+        "operationId": "export_manga_downloaded_ids_api_manga_downloaded_ids_export_get",
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Export Manga Downloaded Ids"
+      }
+    },
+    "/api/manga/downloaded-ids/{list_id}": {
+      "delete": {
+        "operationId": "remove_manga_downloaded_id_list_api_manga_downloaded_ids__list_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "list_id",
+            "required": true,
+            "schema": {
+              "title": "List Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Remove Manga Downloaded Id List Api Manga Downloaded Ids  List Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Manga Downloaded Id List"
       }
     },
     "/api/manga/downloads": {

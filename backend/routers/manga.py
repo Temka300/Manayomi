@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from fastapi.responses import FileResponse, PlainTextResponse
+from pydantic import BaseModel, Field
 from files_base.sources import deterministic_source_id
 
 import re
@@ -56,6 +56,11 @@ class RootCreate(BaseModel):
     path: str
 
 
+class DownloadedIdsImport(BaseModel):
+    filename: str = Field(min_length=1, max_length=255)
+    content: str = Field(max_length=8_000_000)
+
+
 class RootRelocate(BaseModel):
     path: str
     confirm: bool = False
@@ -96,6 +101,39 @@ def read_manga_settings() -> dict[str, Any]:
 def write_manga_settings(update: MangaSettingsUpdate) -> dict[str, Any]:
     changes = update.model_dump(exclude_none=True)
     return update_manga_settings(changes)
+
+
+@router.get("/api/manga/downloaded-ids/export", response_class=PlainTextResponse)
+def export_manga_downloaded_ids() -> Response:
+    try:
+        content = queries.export_downloaded_ids()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return PlainTextResponse(
+        content=content,
+        headers={"Content-Disposition": 'attachment; filename="manayomi-downloaded-ids.txt"'},
+    )
+
+
+@router.get("/api/manga/downloaded-ids")
+def read_manga_downloaded_id_lists() -> dict[str, Any]:
+    return {"lists": queries.list_downloaded_id_lists()}
+
+
+@router.post("/api/manga/downloaded-ids")
+def import_manga_downloaded_ids(body: DownloadedIdsImport) -> dict[str, Any]:
+    try:
+        queries.import_downloaded_ids(body.filename, body.content)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return read_manga_downloaded_id_lists()
+
+
+@router.delete("/api/manga/downloaded-ids/{list_id}")
+def remove_manga_downloaded_id_list(list_id: int) -> dict[str, Any]:
+    if not queries.remove_downloaded_id_list(list_id):
+        raise HTTPException(status_code=404, detail="Downloaded-ID list not found")
+    return read_manga_downloaded_id_lists()
 
 
 @router.get("/api/manga/roots")
@@ -553,7 +591,9 @@ def browse_nhentai(
         gathered.extend(result.get("items") or [])
 
     items = gathered[window.offset : window.offset + window.per_page]
-    downloaded = queries.downloaded_gallery_ids([item["id"] for item in items])
+    gallery_ids = [item["id"] for item in items]
+    downloaded = queries.downloaded_gallery_ids(gallery_ids)
+    downloaded_elsewhere = queries.imported_downloaded_gallery_ids(gallery_ids)
     tag_ids = [tag_id for item in items for tag_id in (item.get("tag_ids") or [])]
     tag_info = queries.tag_info_by_nh_ids(tag_ids)
     enriched = []
@@ -569,6 +609,7 @@ def browse_nhentai(
             {
                 **item,
                 "downloaded": item["id"] in downloaded,
+                "downloaded_elsewhere": item["id"] in downloaded_elsewhere,
                 "known_tags": known_tags,
                 "ignored_matches": ignored_matches,
             }

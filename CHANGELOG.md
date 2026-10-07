@@ -2,6 +2,8 @@
 
 ## Current experimental update
 
+- Export local nHentai manga IDs as a six-digit text list, import named lists in Manayomi Settings, and include those lists in Browse's Hide downloaded filter with individual removal controls.
+
 - Add a separate hotspot launcher for WSL forwarding with an explicit private host allowance and unchanged same-origin protections.
 
 - Add a local Bash LAN launcher matching the Windows maintainer wrapper, with optional explicit `--lan` and argument forwarding.

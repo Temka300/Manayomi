@@ -1342,6 +1342,28 @@ come from MangaDex's public tag endpoint and are cached for thirty minutes.
 nHentai's existing sort, language, and six structured query fields live in its
 own sheet, so MangaDex filtering does not reinterpret nHentai's query grammar.
 Hide downloaded is one persisted Browse header action shared by both providers.
+Manayomi Settings exports indexed local nHentai gallery IDs to
+`manayomi-downloaded-ids.txt`, one six-digit ID per line (older numeric IDs
+are zero-padded without changing their identity). Importing this file in Colab
+or another installation adds a named downloaded-ID reference list beneath the
+controls, with a unique-ID count and an individual × removal action. Import
+validates every nonblank line before saving; duplicate IDs within a file are
+collapsed, UTF-8 BOM/CRLF files are accepted, and malformed or empty files leave
+saved lists untouched. Lists persist in additive module user-database tables,
+survive index rebuilds, and may overlap without losing the remaining list's
+markers when one is removed. nHentai Browse's Hide downloaded combines actual
+local downloads with imported IDs. Imported markers do not create local manga
+rows, change reader availability, or alter MangaDex identities. Export includes
+only local nHentai rows, never imported lists. Removing a list affects its
+reference markers only; manga files, favorites, history, and the source text
+file are preserved.
+Verification on 2026-10-08 passed all 455 tests (including isolated HTTP/SQLite
+ID-list coverage and the additive OpenAPI snapshot), compileall, frontend type
+checks with zero errors/warnings, and the production build. An isolated Edge
+browser at 1280×900 and 390×844 exercised export bytes, import/counts, invalid
+input, Hide downloaded/show, reload persistence, and individual list removal
+with no unexpected console or HTTP errors. Provider responses used local
+fixtures; live-library mutations and real manga transfers were not run.
 Clicking a MangaDex title opens localized title information, description,
 authors/artists, publication state, tags, explicit MangaDex attribution, and a
 language-filterable chapter feed grouped by volume. Desktop shows information
@@ -1704,6 +1726,10 @@ gate, distilled from past breakages.
 
 **Manayomi changes**
 
+- [x] Export/import downloaded-ID text lists with whole-file validation, duplicate
+      handling, overlapping-list removal, additive persistence, and separate
+      local/elsewhere Browse markers; preserve local reader availability and
+      verify the browser controls using isolated data.
 - [x] Root relocation first verifies every indexed file under the resolved
       destination and requires confirmation; it changes index/root paths only
       and never moves or deletes CBZ media. On Linux, explicit relocation can

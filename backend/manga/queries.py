@@ -3,6 +3,7 @@ favorites/pins/categories — keyed by (source, gallery_id) — survive index
 rebuilds, per the Keivotos two-database contract."""
 from __future__ import annotations
 
+import re
 import sqlite3
 import time
 from contextlib import contextmanager
@@ -484,6 +485,77 @@ def downloaded_gallery_ids(gallery_ids: list[int], source: str = "nhentai") -> s
         rows = connection.execute(
             f"SELECT gallery_id FROM manga WHERE source = ? AND gallery_id IN ({placeholders})",
             (source, *gallery_ids),
+        ).fetchall()
+    return {row[0] for row in rows}
+
+
+def export_downloaded_ids() -> str:
+    """Export local nHentai identities only; imported lists are never re-exported."""
+    with library_session() as connection:
+        rows = connection.execute(
+            "SELECT DISTINCT gallery_id FROM manga WHERE source = 'nhentai' ORDER BY gallery_id"
+        ).fetchall()
+    ids = [int(row[0]) for row in rows]
+    if any(gallery_id < 1 or gallery_id > 999999 for gallery_id in ids):
+        raise ValueError("The library contains nHentai IDs that cannot be represented as six digits.")
+    return "".join(f"{gallery_id:06d}\n" for gallery_id in ids)
+
+
+def list_downloaded_id_lists() -> list[dict[str, Any]]:
+    with user_session() as connection:
+        rows = connection.execute(
+            "SELECT lists.id, lists.filename, lists.created_at, COUNT(items.gallery_id) AS count"
+            " FROM downloaded_id_lists lists"
+            " LEFT JOIN downloaded_id_list_items items ON items.list_id = lists.id"
+            " GROUP BY lists.id ORDER BY lists.id"
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def import_downloaded_ids(filename: str, content: str) -> None:
+    """Validate the whole text before atomically adding an independent reference list."""
+    cleaned_name = filename.strip()
+    if not cleaned_name or len(cleaned_name) > 255 or any(ord(char) < 32 for char in cleaned_name):
+        raise ValueError("Choose a file with a valid filename (1–255 characters).")
+    if len(content) > 8_000_000:
+        raise ValueError("The downloaded-ID file must be at most 8 MB.")
+    ids: set[int] = set()
+    for number, line in enumerate(content.removeprefix("\ufeff").splitlines(), 1):
+        value = line.strip()
+        if not value:
+            continue
+        if not re.fullmatch(r"[0-9]{6}", value) or int(value) == 0:
+            raise ValueError(f"Line {number}: expected one six-digit nHentai ID.")
+        ids.add(int(value))
+    if not ids:
+        raise ValueError("The file contains no downloaded manga IDs.")
+    with user_session() as connection:
+        cursor = connection.execute(
+            "INSERT INTO downloaded_id_lists (filename, created_at) VALUES (?, ?)",
+            (cleaned_name, int(time.time() * 1000)),
+        )
+        connection.executemany(
+            "INSERT INTO downloaded_id_list_items (list_id, gallery_id) VALUES (?, ?)",
+            ((cursor.lastrowid, gallery_id) for gallery_id in sorted(ids)),
+        )
+
+
+def remove_downloaded_id_list(list_id: int) -> bool:
+    """Remove one imported reference list; local library and user organization stay intact."""
+    with user_session() as connection:
+        cursor = connection.execute("DELETE FROM downloaded_id_lists WHERE id = ?", (list_id,))
+        return cursor.rowcount > 0
+
+
+def imported_downloaded_gallery_ids(gallery_ids: list[int]) -> set[int]:
+    if not gallery_ids:
+        return set()
+    placeholders = ",".join("?" for _ in gallery_ids)
+    with user_session() as connection:
+        rows = connection.execute(
+            "SELECT DISTINCT gallery_id FROM downloaded_id_list_items"
+            f" WHERE gallery_id IN ({placeholders})",
+            gallery_ids,
         ).fetchall()
     return {row[0] for row in rows}
 
