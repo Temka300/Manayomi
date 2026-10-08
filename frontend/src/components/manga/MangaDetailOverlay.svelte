@@ -466,8 +466,8 @@
       class:info-large={infoSize === 'large'}
     >
       <div class="mb-4 flex items-start justify-between gap-3">
+        <button class="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-[#303040] text-gray-400 hover:text-purple-100" type="button" aria-label="Close manga information" on:click={() => dispatch('close')}>✕</button>
         <h2 class="min-w-0 flex-1 text-lg font-bold text-purple-100">{title}</h2>
-        <button class="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-[#303040] text-gray-400 hover:text-purple-100" on:click={() => dispatch('close')}>✕</button>
       </div>
 
       {#if error}
@@ -497,7 +497,7 @@
                     class="manga-tag-chip rounded-full border border-[#2c2c40] px-3 py-1 text-sm hover:border-purple-400/60"
                     style="color: {MANGA_TAG_COLORS[tag.category] ?? MANGA_TAG_COLORS.tag}"
                     title="Search this {tag.category} from the current Manayomi section"
-                    on:click={() => dispatch('searchTag', { category: tag.category, name: tag.name })}
+                    on:click|stopPropagation={() => dispatch('searchTag', { category: tag.category, name: tag.name })}
                   >{tag.name}</button>
                 {/each}
               </div>

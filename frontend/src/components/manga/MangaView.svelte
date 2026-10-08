@@ -128,6 +128,15 @@
 
   let pendingLibraryFilter: MangaFilterSeed | null = null;
   let pendingBrowseFilter: MangaFilterSeed | null = null;
+  // Retain the current values while tabs and settings refreshes remount Library.
+  let libraryFilters: Record<MangaFilterKey, string> = {
+    tags: '',
+    categories: '',
+    groups: '',
+    artists: '',
+    parodies: '',
+    characters: ''
+  };
 
   function openLocal(mangaId: number, startReading = false) {
     detailOrigin = 'library';
@@ -342,7 +351,9 @@
           {blur}
           {coverSize}
           {coverProgress}
+          bind:filters={libraryFilters}
           initialFilter={pendingLibraryFilter}
+          on:filterSeedConsumed={() => (pendingLibraryFilter = null)}
           on:open={(e) => openLocal(e.detail.mangaId)}
         />
       {/key}

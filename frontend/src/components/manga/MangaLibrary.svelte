@@ -29,7 +29,7 @@
     return { percent, read, count };
   }
 
-  const dispatch = createEventDispatcher<{ open: { mangaId: number } }>();
+  const dispatch = createEventDispatcher<{ open: { mangaId: number }; filterSeedConsumed: void }>();
 
   let result: LibraryResult | null = null;
   let categories: MangaCategory[] = [];
@@ -82,7 +82,7 @@
     { key: 'characters', label: 'Characters', prefix: 'character' }
   ];
 
-  let filters: Record<LibraryFilterKey, string> = {
+  export let filters: Record<LibraryFilterKey, string> = {
     tags: '',
     categories: '',
     groups: '',
@@ -259,6 +259,7 @@
     if (initialFilter) {
       filters = { ...filters, [initialFilter.key]: initialFilter.value };
       filterOpen = true;
+      dispatch('filterSeedConsumed');
     }
     await tick();
     void load();

@@ -383,11 +383,11 @@
     <button class="absolute inset-0 h-full w-full cursor-default" type="button" aria-label="Close MangaDex information background" on:click={() => dispatch('close')}></button>
     <article class="md-detail relative z-10 mx-auto my-2 rounded-2xl border border-[#2a2a3e] bg-[#101018] shadow-2xl sm:my-8" class:info-small={infoSize === 'small'} class:info-large={infoSize === 'large'}>
       <header class="mb-4 flex items-start justify-between gap-3">
-        <div class="min-w-0">
+        <button class="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-[#303040] text-gray-400 hover:text-purple-100" type="button" aria-label="Close MangaDex information" on:click={() => dispatch('close')}>✕</button>
+        <div class="min-w-0 flex-1">
           <p class="text-[10px] font-semibold uppercase tracking-[0.18em] text-orange-300/70">MangaDex</p>
           <h2 class="mt-1 text-xl font-bold text-purple-100">{title?.title ?? 'MangaDex title'}</h2>
         </div>
-        <button class="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-[#303040] text-gray-400 hover:text-purple-100" on:click={() => dispatch('close')}>✕</button>
       </header>
 
       {#if loading}

@@ -1410,6 +1410,8 @@ manga cover. The second click opens manga information, where the cover remains
 visible.
 
 Manga detail uses a medium-large responsive panel and cover, larger tag chips,
+and a header with the × close button at the left and the title immediately to
+its right. MangaDex information uses the same header order. Detail retains
 equal-height category controls, and one adjacent row of equal-size icon actions:
 play/Read, external nHentai page, Files folder, heart, and pin. Read is black for
 a remote work and purple for a downloaded local work; favourite and pin retain
@@ -1423,8 +1425,21 @@ completed bar remains for that dialog lifetime and is discarded when detail
 closes. Tag clicks return to the originating Library or Browse surface, open
 its filter popover, populate the matching Tags/Categories/Groups/Artists/
 Parodies/Characters field, and immediately apply that filter.
+Library consumes each clicked-tag handoff once and retains the current six
+structured filter values while switching sections or returning from Settings.
+Later edits and clears replace the clicked value without requiring a page
+refresh; another explicit tag click updates its matching field and opens the
+popover again. These values last for the current Manayomi view, not across a
+full page reload.
 Clicking the dim backdrop closes manga information without affecting clicks
 inside the panel.
+Filter/header verification on 2026-10-08 passed 33 Manayomi/MangaDex tests,
+including timed Edge interaction at 1280×900 and 390×844. Browser fixtures
+covered clicked-tag seeds, replacement fields and emitted search queries,
+History/Settings returns, clears, repeated tags, both header positions, and
+button/Escape/backdrop closing with clean console and HTTP responses. Frontend
+type checks and the production build passed. Verification used a temporary
+database home; live-library writes and real provider transfers were not run.
 
 Reading History is durable private Manayomi user state. Starting the reader and
 changing pages upserts the current page, page count, title, cover identity, and
@@ -1726,6 +1741,11 @@ gate, distilled from past breakages.
 
 **Manayomi changes**
 
+- [x] Keep edited and cleared Library filter values through section/settings
+      remounts, consume clicked-tag seeds once, and verify repeated tag clicks
+      with real timed desktop/phone browser interaction.
+- [x] Place both manga-information close buttons before their titles and verify
+      button, Escape, and backdrop closing at desktop and phone widths.
 - [x] Export/import downloaded-ID text lists with whole-file validation, duplicate
       handling, overlapping-list removal, additive persistence, and separate
       local/elsewhere Browse markers; preserve local reader availability and

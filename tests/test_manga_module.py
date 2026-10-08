@@ -869,5 +869,207 @@ class MangaSeriesIntegrationTests(unittest.TestCase):
             self.assertIn("SERIES_TEST_OK", completed.stdout)
 
 
+BROWSER_SCRIPT = r"""
+const assert = require('node:assert/strict');
+const config = JSON.parse(process.argv[2]);
+const { chromium } = require(config.playwrightModule);
+const { expect } = require(config.playwrightModule + '/test');
+const origin = new URL(config.url).origin;
+const mode = process.argv[1];
+const card = {
+  id: 101, source: 'nhentai', gallery_id: 123456, title: 'Filter regression manga',
+  pages: 1, created_at: 1, languages: 'english', favorite: 0, pinned: 0,
+  series_id: null, read_last_page: null, read_page_count: null
+};
+const tags = [
+  { category: 'tag', name: 'original tag' }, { category: 'artist', name: 'fixture artist' }
+];
+const dex = {
+  id: '11111111-1111-4111-8111-111111111111', title: 'Header regression MangaDex',
+  description: '', authors: [], artists: [], cover_filename: '', tags: [],
+  status: 'completed', year: 2020, original_language: 'ja', available_languages: ['en'],
+  content_rating: 'safe', publication_demographic: '', links: {}, official_links: [],
+  alternate_titles: [], downloaded_chapters: 0
+};
+const fixtures = {
+  '/api/manga/settings': { nhentai_enabled: true, cf_clearance: '', user_agent: '',
+    request_delay_ms: 1200, blur_covers: false, show_ignored: true, ignored_tags: [], cover_progress: 'bar' },
+  '/api/manga/status': { suite: 'Keivotos', module: 'Manayomi', version: 'V1.1.2',
+    manga_count: 1, tag_count: 2, nhentai_enabled: true, module_home: '', default_library: '' },
+  '/api/manga/library': { manga: [card], total: 1, page: 1, per_page: 20, page_count: 1,
+    stats: { manga_count: 1, tag_count: 2, favorite_count: 0 } },
+  '/api/manga/detail/101': { ...card, tags, category_ids: [], files_source_id: null,
+    files_relative_path: null, file_path: '/fixture/manga.cbz', root_id: null },
+  '/api/manga/pages/123456': { gallery_id: 123456, pages: 1, names: ['page_0.png'], version: 'fixture' },
+  '/api/manga/history/progress/123456': { progress: null },
+  '/api/manga/categories': { categories: [] }, '/api/manga/series': { series: [] },
+  '/api/manga/tags/top': { tags: [] }, '/api/manga/roots': { roots: [] },
+  '/api/manga/downloaded-ids': { lists: [] },
+  '/api/manga/history': { items: [], total: 0, limit: 200, offset: 0 },
+  '/api/manga/scan': { running: false, root_id: null, total: 0, processed: 0, errors: [] },
+  '/api/manga/enrich': { running: false, message: '', unmatched: 0, processed: 0, total: 0 },
+  '/api/manga/migrate': { running: false, message: '', processed: 0, total: 0 },
+  '/api/manga/browse': { items: [], page: 1, num_pages: 1, total: 0 },
+  '/api/manga/downloads': { running: false, current: null, queue: [], recent: [] },
+  '/api/manga/remote/mangadex/browse': { items: [dex], page: 1, num_pages: 1, total: 1 },
+  [`/api/manga/remote/mangadex/title/${dex.id}`]: dex,
+  [`/api/manga/remote/mangadex/title/${dex.id}/chapters`]: { items: [], total: 0 }
+};
+(async () => {
+  const browser = await chromium.launch({ headless: true,
+    ...(config.executable ? { executablePath: config.executable } : {}) });
+  try {
+    for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+      const context = await browser.newContext({ viewport });
+      const page = await context.newPage();
+      const errors = [];
+      page.on('pageerror', error => errors.push(error.message));
+      page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+      page.on('response', response => { if (response.status() >= 400) errors.push(`${response.status()} ${response.url()}`); });
+      await context.addInitScript(() => {
+        localStorage.setItem('keivotos:active-module', JSON.stringify('manayomi'));
+      });
+      // Serve manga fixtures in the browser; reject mutations and external requests.
+      await context.route('**/*', async route => {
+        const request = route.request();
+        const url = new URL(request.url());
+        if (url.origin !== origin || request.method() !== 'GET') {
+          errors.push(`Unexpected request: ${request.method()} ${request.url()}`);
+          return route.abort();
+        }
+        if (url.pathname.startsWith('/api/manga/cover/')) return route.fulfill({
+          contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="140" height="200"><rect width="140" height="200" fill="#7065a0"/></svg>'
+        });
+        if (url.pathname in fixtures) return route.fulfill({ json: fixtures[url.pathname] });
+        if (url.pathname.startsWith('/api/manga/')) {
+          errors.push(`Missing fixture: ${url.pathname}`);
+          return route.fulfill({ status: 500, json: { detail: 'Missing browser fixture' } });
+        }
+        return route.continue();
+      });
+      await page.goto(origin, { waitUntil: 'networkidle' });
+      const libraryButton = page.getByRole('button', { name: 'Library', exact: true });
+      const filterButton = page.getByRole('button', { name: 'Structured library filters', exact: true });
+      const filter = page.getByRole('dialog', { name: 'Library filters', exact: true });
+      const openLocal = () => page.getByRole('button', { name: /Filter regression manga/ }).click();
+      const queryAfter = async (action, query) => {
+        const response = page.waitForResponse(response => {
+          const url = new URL(response.url());
+          return url.pathname === '/api/manga/library' && (url.searchParams.get('q') ?? '') === query;
+        });
+        await action();
+        await response;
+      };
+      const roundtrip = async section => {
+        await page.getByRole('button', { name: section, exact: true }).click();
+        await libraryButton.click();
+        await filterButton.click();
+        await page.waitForTimeout(220); // Allow the protected 180ms popover animation to finish.
+      };
+      await openLocal();
+      if (mode === 'filters') {
+        await queryAfter(() => page.locator('.manga-tag-chip').getByText('original tag', { exact: true }).click(), 'tag:"original tag"');
+        await expect(filter.getByLabel('Tags', { exact: true })).toHaveValue('original tag');
+        await filter.getByLabel('Tags', { exact: true }).fill('replacement tag, second tag');
+        await filter.getByLabel('Artists', { exact: true }).fill('replacement artist');
+        const editedQuery = 'tag:"replacement tag" tag:"second tag" artist:"replacement artist"';
+        await queryAfter(() => filter.getByRole('button', { name: 'Apply', exact: true }).click(), editedQuery);
+        await roundtrip('History');
+        await expect(filter.getByLabel('Tags', { exact: true })).toHaveValue('replacement tag, second tag');
+        await expect(filter.getByLabel('Artists', { exact: true })).toHaveValue('replacement artist');
+        await queryAfter(() => filter.getByRole('button', { name: 'Apply', exact: true }).click(), editedQuery);
+        await roundtrip('Settings');
+        await expect(filter.getByLabel('Tags', { exact: true })).toHaveValue('replacement tag, second tag');
+        await queryAfter(() => filter.getByRole('button', { name: 'Clear', exact: true }).click(), '');
+        if (await filterButton.getAttribute('aria-expanded') === 'true') {
+          await filter.getByRole('button', { name: 'Close Library filters', exact: true }).click();
+        }
+        await roundtrip('History');
+        await expect(filter.getByLabel('Tags', { exact: true })).toHaveValue('');
+        await expect(filter.getByLabel('Artists', { exact: true })).toHaveValue('');
+        await filter.getByRole('button', { name: 'Close Library filters', exact: true }).click();
+        // A fresh click, including the same tag, must still seed and open the filter.
+        await openLocal();
+        await queryAfter(() => page.locator('.manga-tag-chip').getByText('original tag', { exact: true }).click(), 'tag:"original tag"');
+        await expect(filter.getByLabel('Tags', { exact: true })).toHaveValue('original tag');
+        await filter.getByRole('button', { name: 'Close Library filters', exact: true }).click();
+        await openLocal();
+        await queryAfter(() => page.locator('.manga-tag-chip').getByText('fixture artist', { exact: true }).click(), 'tag:"original tag" artist:"fixture artist"');
+        await expect(filter.getByLabel('Artists', { exact: true })).toHaveValue('fixture artist');
+      } else {
+        const verifyHeader = async (selector, closeName) => {
+          const panel = page.locator(selector);
+          const title = panel.locator('h2').first();
+          const close = panel.getByRole('button', { name: closeName, exact: true });
+          await expect(title).toBeVisible();
+          const titleBox = await title.boundingBox();
+          const closeBox = await close.boundingBox();
+          assert(closeBox.x + closeBox.width < titleBox.x, 'Close button must be left of the title');
+          assert(titleBox.x + titleBox.width <= viewport.width, 'Title must stay within the viewport');
+          await close.click();
+          await expect(panel).toHaveCount(0);
+        };
+        await verifyHeader('.manga-info-panel', 'Close manga information');
+        await openLocal();
+        await page.keyboard.press('Escape');
+        await expect(page.locator('.manga-info-panel')).toHaveCount(0);
+        await openLocal();
+        await page.getByRole('button', { name: 'Close manga information background', exact: true }).click({ position: { x: 2, y: 2 } });
+        await expect(page.locator('.manga-info-panel')).toHaveCount(0);
+        await page.getByRole('button', { name: 'Browse', exact: true }).click();
+        await page.getByRole('tab', { name: 'MangaDex', exact: true }).click();
+        await page.getByRole('button', { name: /Header regression MangaDex/ }).click();
+        await verifyHeader('.md-detail', 'Close MangaDex information');
+        await page.getByRole('button', { name: /Header regression MangaDex/ }).click();
+        await page.keyboard.press('Escape');
+        await expect(page.locator('.md-detail')).toHaveCount(0);
+        await page.getByRole('button', { name: /Header regression MangaDex/ }).click();
+        await page.getByRole('button', { name: 'Close MangaDex information background', exact: true }).click({ position: { x: 2, y: 2 } });
+        await expect(page.locator('.md-detail')).toHaveCount(0);
+      }
+      assert.deepEqual(errors, [], 'Browser console/runtime/request errors');
+      console.log(`${mode.toUpperCase()}_BROWSER_OK ${viewport.width}x${viewport.height}`);
+      await context.close();
+    }
+  } finally {
+    await browser.close();
+  }
+})().catch(error => { console.error(error); process.exitCode = 1; });
+"""
+
+
+@unittest.skipUnless(
+    os.environ.get("MANAYOMI_BROWSER_URL") and os.environ.get("MANAYOMI_PLAYWRIGHT_MODULE"),
+    "Set MANAYOMI_BROWSER_URL and MANAYOMI_PLAYWRIGHT_MODULE for timed browser checks",
+)
+class MangaBrowserRegressionTests(unittest.TestCase):
+    """Run against a built app with Manayomi enabled; manga APIs are fixture-only.
+
+    MANAYOMI_BROWSER_NODE selects Node (default: node), and optional
+    MANAYOMI_BROWSER_EXECUTABLE selects an installed Chromium/Edge executable.
+    No browser installation, media transfer, or server mutation is performed.
+    """
+
+    def run_browser(self, mode: str) -> None:
+        config = json.dumps({
+            "url": os.environ["MANAYOMI_BROWSER_URL"],
+            "playwrightModule": os.environ["MANAYOMI_PLAYWRIGHT_MODULE"],
+            "executable": os.environ.get("MANAYOMI_BROWSER_EXECUTABLE"),
+        })
+        completed = subprocess.run(
+            [os.environ.get("MANAYOMI_BROWSER_NODE", "node"), "-e", BROWSER_SCRIPT, mode, config],
+            capture_output=True, text=True, timeout=90,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        for size in ("1280x900", "390x844"):
+            self.assertIn(f"{mode.upper()}_BROWSER_OK {size}", completed.stdout)
+
+    def test_library_filter_edits_and_clears_survive_remounts(self) -> None:
+        self.run_browser("filters")
+
+    def test_information_close_buttons_precede_titles(self) -> None:
+        self.run_browser("headers")
+
+
 if __name__ == "__main__":
     unittest.main()

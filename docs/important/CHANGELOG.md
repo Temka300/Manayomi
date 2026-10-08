@@ -2,6 +2,9 @@
 
 ## Current experimental update
 
+- Keep edited and cleared Library tag filters when switching sections or returning from Settings; apply each manga-detail tag click only once.
+- Place the manga-information close button at the left of the title in both local/nHentai and MangaDex panels.
+
 - Export local nHentai manga IDs as a six-digit text list, import named lists in Manayomi Settings, and include those lists in Browse's Hide downloaded filter with individual removal controls.
 
 - Manayomi is a first-class optional surface in the current Keivotos descriptor registry; it keeps the established `modules/manga` storage and `/api/manga` routes.
